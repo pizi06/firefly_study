@@ -98,7 +98,7 @@ OK，架构简介到这里，后面我们每个模块分开详细介绍。
 master 类很简单，就3个函数，一个init，设置配置信息，并调用masterapp，然后还有一个循环启动子进程的start函数。
 这里只有masterapp函数值得我们关注。
 代码如下：
-
+`
  36     def masterapp(self):
  37         config = json.load(open(self.configpath,'r'))
  38         mastercnf = config.get('master')
@@ -119,7 +119,7 @@ master 类很简单，就3个函数，一个init，设置配置信息，并调�
  53         import rootapp
  54         reactor.listenTCP(webport, DelaySite(self.webroot))
  55         reactor.listenTCP(rootport, BilateralFactory(self.root))
-
+`
 
 实际上我不喜欢这种编码风格，感觉有点乱，有些过度使用import和python的修饰符。
 仔细看，这里首先通过config.json读取配置信息，然后根据配置信息，起一个pb.root,和一个webserver，然后给pb.root 加一个services，这个services类是个非常重要的类，贯穿整个系统。我们下面会详细介绍它。 这里还通过import  webapp 和修饰符@xxx的方法来实现给webserver添加stop 和reload 2个child。实现的功能，我前面其实已经是说过。就是在浏览器里面输入 http://localhost:9998/stop 或者http://localhost:9998/reload 来调用对于的类。具体实现的方法是：
@@ -128,7 +128,7 @@ webroot = vhost.NameVirtualHost()
 这个vhost.NameVirtualHost().putChild()函数也是twisted的函数，和前面pb.root一样，大家如果等不及我后面的解说可以自己google到twisted网站，上面有详细的doc、samples。
 
 由于看的实在不习惯（可能自己是python、server的新手），所以我就自己按照功能实现改了一下结构，如下，希望大家对比可以更加清晰。（我改动后的所有代码都会抽空上传到github。地址为： https://github.com/chenee 如果没有说明我还没来得及上传，在等等，或者直接M我要。）
-
+`
 22 class Master:
  23     def __init__(self, configpath, mainpath):
  24         """
@@ -177,7 +177,7 @@ webroot = vhost.NameVirtualHost()
  67             cmds = 'python %s %s %s' % (self.mainpath, sername, self.configpath)
  68             subprocess.Popen(cmds, shell=True)
  69         reactor.run()   
-
+`
 我把原先通过addServiceChannel（）添加services的过程放到PBRoot类的__init__里面了，这样改动也适合后面其它模块，反正root逻辑上肯定是需要一个services的。而且这个services就是普通services。（后面还会提到一些services的子类）
 
 另外，把原先通过import webapp 加用修饰类实现的putChild（）功能，直接写到一个注册函数里面。
