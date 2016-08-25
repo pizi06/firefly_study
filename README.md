@@ -70,6 +70,7 @@ startmaster.py 这个python脚本会实例化class master；
 一个webserver
 然后是subprocess.Popen（cmd) 来启动其它子模块。
 cmd命令打印出来为：
+
 python appmain.py dbfront config.json
 python appmain.py gate config.json
 python appmain.py net config.json
@@ -78,8 +79,6 @@ python appmain.py admin config.json
 
 全部启动起来以后，逻辑关系如下：
 
-![逻辑关系示意图](http://www.9miao.com/data/attachment/forum/201401/07/175211ylijjha1h9ah12d1.jpg)
- 
 
 master虽然通过红线连接每个模块，但是实际上的工作只是启动和管理，并没有很大的数据交互。
 Admin模块虽然挂在这里，但是其基本上只负责统计和“管理员”功能。
@@ -98,7 +97,7 @@ OK，架构简介到这里，后面我们每个模块分开详细介绍。
 master 类很简单，就3个函数，一个init，设置配置信息，并调用masterapp，然后还有一个循环启动子进程的start函数。
 这里只有masterapp函数值得我们关注。
 代码如下：
-`
+```
  36     def masterapp(self):
  37         config = json.load(open(self.configpath,'r'))
  38         mastercnf = config.get('master')
@@ -109,7 +108,7 @@ master 类很简单，就3个函数，一个init，设置配置信息，并调�
  43         rootservice = services.Service("rootservice")
  44         self.root.addServiceChannel(rootservice)
  45         self.webroot = vhost.NameVirtualHost()
- 46         self.webroot.addHost('0.0.0.0', './')                                                                        
+ 46         self.webroot.addHost('0.0.0.0', './')
  47         GlobalObject().root = self.root
  48         GlobalObject().webroot = self.webroot
  49         if masterlog:
@@ -119,17 +118,19 @@ master 类很简单，就3个函数，一个init，设置配置信息，并调�
  53         import rootapp
  54         reactor.listenTCP(webport, DelaySite(self.webroot))
  55         reactor.listenTCP(rootport, BilateralFactory(self.root))
-`
+```
 
 实际上我不喜欢这种编码风格，感觉有点乱，有些过度使用import和python的修饰符。
 仔细看，这里首先通过config.json读取配置信息，然后根据配置信息，起一个pb.root,和一个webserver，然后给pb.root 加一个services，这个services类是个非常重要的类，贯穿整个系统。我们下面会详细介绍它。 这里还通过import  webapp 和修饰符@xxx的方法来实现给webserver添加stop 和reload 2个child。实现的功能，我前面其实已经是说过。就是在浏览器里面输入 http://localhost:9998/stop 或者http://localhost:9998/reload 来调用对于的类。具体实现的方法是：
+```
 webroot = vhost.NameVirtualHost()
- webroot.putChild(cls.__name__, cls()) ；        
+webroot.putChild(cls.__name__, cls());
+```
 这个vhost.NameVirtualHost().putChild()函数也是twisted的函数，和前面pb.root一样，大家如果等不及我后面的解说可以自己google到twisted网站，上面有详细的doc、samples。
 
 由于看的实在不习惯（可能自己是python、server的新手），所以我就自己按照功能实现改了一下结构，如下，希望大家对比可以更加清晰。（我改动后的所有代码都会抽空上传到github。地址为： https://github.com/chenee 如果没有说明我还没来得及上传，在等等，或者直接M我要。）
-`
-22 class Master:
+```
+ 22 class Master:
  23     def __init__(self, configpath, mainpath):
  24         """
  25         """
@@ -152,12 +153,12 @@ webroot = vhost.NameVirtualHost()
  42         webroot = vhost.NameVirtualHost()
  43         webroot.addHost('0.0.0.0', './')
  44         GlobalObject().webroot = webroot
- 45         webapp.initWebChildren()                                                                                     
+ 45         webapp.initWebChildren()
  46         reactor.listenTCP(self.webport, DelaySite(webroot))
  47 
  48 
  49     def startMaster(self):
-50 
+ 50 
  51         self.__startRoot()
  52         self.__startWeb()
  53 
@@ -176,14 +177,15 @@ webroot = vhost.NameVirtualHost()
  66         for sername in sersconf.keys():
  67             cmds = 'python %s %s %s' % (self.mainpath, sername, self.configpath)
  68             subprocess.Popen(cmds, shell=True)
- 69         reactor.run()   
-`
+ 69         reactor.run()
+```
 我把原先通过addServiceChannel（）添加services的过程放到PBRoot类的__init__里面了，这样改动也适合后面其它模块，反正root逻辑上肯定是需要一个services的。而且这个services就是普通services。（后面还会提到一些services的子类）
 
 另外，把原先通过import webapp 加用修饰类实现的putChild（）功能，直接写到一个注册函数里面。
-45   webapp.initWebChildren()                                                                                     
-   		 addToWebRoot(stop)
-   		 addToWebRoot(reloadmodule)
+
+	webapp.initWebChildren()
+   	addToWebRoot(stop)
+   	addToWebRoot(reloadmodule)
 
 改动以后的功能和原先一模一样，改动后的代码对我等新手来说可以清晰的看到master模块的结构
 
@@ -237,12 +239,15 @@ reference.py 如果你看了前面twisted官网的介绍就会知道，node只�
 前面章节提到master模块实现了一个PBRoot作为server等待client端的连接。我们这里先拿DB模块来说明。（DB模块的其它功能，和我改写的部分后面会详细介绍。）
 
 master模块里面实现的代码如下（这个是我改过的代码，稍后上传git）：
-38     def __startRoot(self):
+```
+ 38     def __startRoot(self):
  39         GlobalObject().root = PBRoot("rootservice")
  40         reactor.listenTCP(self.rootport, BilateralFactory(GlobalObject().root))
+```
 
 其中PBRoot类有2个关键函数。
 
+```
    def remote_register(self,name,transport):
         """设置代理通道
         @param addr: (hostname,port)hostname 根节点的主机名,根节点的端口
@@ -259,7 +264,7 @@ master模块里面实现的代码如下（这个是我改过的代码，稍后�
         """
         data = self.service.callTarget(command,*args,**kw)
         return data
-
+```
 remote_register(),这个函数名称被我改了，原先好像叫做remote_takeproxy()。大家理解的角度不一样，原先作者lan可能是认为这个函数的功能是root取得其它模块提供给他的代理。我认为，这个函数是其它模块注册到root。
 
 PB的约定是，本地函数起名remote_xxx(),远程函数调用 直接callremote（“XXX”)，所以按照习惯，大家看到的remote_xxx()函数都是提供给对方调用的。
@@ -273,35 +278,40 @@ PB的约定是，本地函数起名remote_xxx(),远程函数调用 直接callrem
 
 下面的代码取自firefly/server/server.py
 (实际上已经被我整理过，但具体代码逻辑还是一样)
-59         if masterconf: #这里一定为True
+```
+ 59         if masterconf: #这里一定为True
  60             masterport = masterconf.get('rootport')
  61             self.master_remote = RemoteObject(servername)
  62             addr = ('localhost',masterport)
  63             self.master_remote.connect(addr)
  64             GlobalObject().masterremote = self.master_remote
+```
 
 这里的RemoteObject类的初始化__init__函数如下：（firefly/distribute/node.py)
-   def __init__(self,name):
- 23         """初始化远程调用对象
- 24         @param port: int 远程分布服的端口号
- 25         @param rootaddr: 根节点服务器地址
- 26         """
- 27         self._name = name
- 28         self._factory = pb.PBClientFactory()
- 29         self._reference = ProxyReference()#这个就是pb.Referenceable的子类
- 30         self._addr = None
 
-
+```
+def __init__(self,name):
+    """初始化远程调用对象
+    @param port: int 远程分布服的端口号
+    @param rootaddr: 根节点服务器地址
+    """
+    self._name = name
+    self._factory = pb.PBClientFactory()
+    self._reference = ProxyReference()#这个就是pb.Referenceable的子类
+    self._addr = None
+```
 
 可以看出我们实现了一个RemoteObject类，这个类包括了pb.PBClientFactory 和pb.Referenceble。在line 63对应的代码里面，我们connect的时候
         reactor.connectTCP(addr[0], addr[1], self._factory)
 就建立了一个root和node的连接。然后再调用下面的函数。
 
+```
     def register(self):
         """把本节点注册到RootNode,并且向RootNode发送代理通道对象
         """
         deferedRemote = self._factory.getRootObject()#取得root的调用句柄。
         deferedRemote.addCallback(callBack,'register',self._name,self._reference)#callBack函数会调用pb.callRemote（）
+```
 
 这个函数就2行，第一行是twisted.pb的client取得root的句柄，有了这个句柄，我们就能够通过callRemote来调用root的相应函数。这里调用的regist，对应root的remote_regist()函数，并且把自己的referenceble传递给root，那么后面root就可以通过这个referenceble来调用自己（node）了。
 
@@ -320,7 +330,7 @@ OK，firefly对twisted.pb的封装和实现就介绍到这里。PB的介绍先�
 
 下面我主要介绍一下db整体模块的结构，流程，逻辑。
 前面的章节应该提到过，除了master模块以外，其它模块（db，gate，net，game1，admin）都是通过master的子进程方式启动。启动代码如下：
-
+```
     def startChildren(self):
         """
         """
@@ -331,7 +341,7 @@ OK，firefly对twisted.pb的封装和实现就介绍到这里。PB的介绍先�
             cmds = 'python %s %s %s' % (self.mainpath, sername, self.configpath)
             subprocess.Popen(cmds, shell=True)
         reactor.run()
-
+```
 通过简单加打印便可以发现，这里其实就是“python appmain.py db config.json”
 
 OK，那么我们可以抛开master，单独命令行启动这个db模块。
@@ -340,7 +350,7 @@ OK，那么我们可以抛开master，单独命令行启动这个db模块。
 我们下面自己那这份代码解说，大家可以对照源代码进行学习。
 （说明，这份代码只是为了学习才拆分开，会存在很多冗余，甚至不一致的地方。仅供参考）
 代码目录如下：
-1 .                                                                                                                    
+  1 .
   2 ├── app  #原先的游戏逻辑目录，这个和firefly库目录对应，存放游戏具体实现。但是这里被我打乱了。
   3 │   ├── __init__.py
   4 │   ├── dbfront  #数据库操作相关文件目录
@@ -389,6 +399,8 @@ MMode对应memcache的前缀是pk(primary key，主键ID)。如 tb_item:1001
 $cat run.sh 
 python appmain.py
 appmain.py 便于学习被我改动过了，如下：
+
+```
 if __name__ == "__main__":
     servername = "dbfront"
     config = json.load(open("config.json", 'r'))
@@ -402,11 +414,14 @@ if __name__ == "__main__":
     ser = DBServer()
     ser.config(serconfig, dbconfig=dbconf, memconfig=memconf,masterconf=masterconf)
     ser.start()
+```
 
 实际上就是实例化DBServer类，把从config.json文件读取的信息传递过去。DBServer就是原先firefly/server/server.py文件。改个名字好看。
 config.json 也被我改了一下，“services”里面只保留“dbfront”，其它都services内容都无关。就不贴出来了，占地方。
 
 现在看DBServer（FFServer）类：
+
+```
 class DBServer:
 
     def __init__(self):
@@ -461,7 +476,7 @@ class DBServer:
         log.msg('%s start...'%self.servername)
         log.msg('%s pid: %s'%(self.servername,os.getpid()))
         reactor.run()
-
+```
 
 根据config.json的解析结果，我们精简掉所有无关内容。发现，DB模块包括以下几个功能模块：
 mastconfig #说明我们需要连接一个root，也就是前面提到的master模块
@@ -484,20 +499,28 @@ OK，firefly库部分的调用完毕，这个时候DB模块已经建立了，和
 GlobalObject().stophandler = initconfig.doWhenStop
 initconfig.loadModule()
 loadModule（）干3件事情：
+
+```
 def loadModule():
     register_madmin()
     initData()
     CheckMemDB(1800)
+```
+
 注册几个表，初始化角色数据到内存，同步内存数据到数据库
 
 注册表的代码在mmode.py中，过程就是实例化几个MAdmin来表示相应表的结构，然后添加到MAdminManager这个单例管理类中。
 MAdmin有几个属性代表表的主键，外键，表名称等信息。
 MAdmin的insert函数会调用父类的Memobject的insert函数。
+
+```
         nowdict = dict(self.__dict__)
         del nowdict['_client']
         newmapping = dict(zip([self.produceKey(keyname) for keyname in nowdict.keys()],
                               nowdict.values()))
         self._client.set_multi(newmapping)
+```
+
 实际上就是根据self的所有属性（除了_client,这个属性指的是memclient）来生成一个字典，然后把这个字典的内容缓存到memcache中。
 比如tb_item表对应的MAdmin,生成的memcache内容就包括（不限于）
 Key                      value
@@ -513,12 +536,14 @@ getObj(self,pk): #先判断pk这条数据是否在memcache，是否有效，如�
 这两条函数其实在db模块启动过程中都没有被调用，（可以加断点或者打印验证）
 
 OK，分析到这里下面在看角色初始化initData()的部分就简单了
+```
    def initData(self):
         allmcharacter = dbCharacter.getALlCharacterBaseInfo()
         for cinfo in allmcharacter:
             pid = cinfo['id']
             mcha = Mcharacter(pid, 'character%d' % pid, mclient)
             mcha.initData(cinfo)
+```
 Mcharacter也是MemObject的子类，做的就是根据数据库中的角色信息实例化Mcharacter内存数据，然后调用memobject的insert同步到memcache。
 取角色信息的过程相反。调用mcharacterinfo（）函数，唯一一点不同是，这个函数有@property修饰，我查了一下，表示这个函数可以当成属性来用，python真酷！
 
@@ -545,6 +570,7 @@ __metaclass__方式实现
 1 首先网上有很多实现方式，而且stackflow里面有大神详细介绍了各种实现。自己google吧，就不贴URL了。
 
 我这里简述原理，放个简单demo帮助理解。
+```
   1 class Singleton(type):                                                                                               
   2     def __init__(self, name, bases, dic):
   3         print ".... Singleton.init ...."
@@ -590,6 +616,7 @@ __metaclass__方式实现
  43 print a1.c
  44 print b1.c
 
+```
 
 输出结果：
 
@@ -638,10 +665,12 @@ __call__函数对应 a()
 # 游戏服务器学习笔记 7 ————   gate模块
 
 前面说过db模块，子模块的启动部分基本都差不多。所以我只介绍不同的地方。gate模块和db模块不同的地方是，gate即作为master的leafnode，同时自己也作为其它模块（net，game1，admin）的root，代码如下。
+```
         if rootport:
             self.root = PBRoot("rootservice")
             reactor.listenTCP(rootport, BilateralFactory(self.root))
             GlobalObject().root = self.root
+```
 大家如果看过前面的章节会发现这段代码也很熟悉，对! 它就是master模块的__startRoot函数一样的功能。我们前面在PB章节也详细介绍过。
 
 OK，gate启动代码算介绍完了（怎么感觉什么都没有说呢？），大家瞅一眼我在github上的代码就一目了然了。
@@ -652,9 +681,13 @@ OK，gate启动代码算介绍完了（怎么感觉什么都没有说呢？）�
 就一行代码，
 initconfig.loadModule()
 跟进去发现代码如下：（代码我改过）
+
+```
 def loadModule():
     rservices.init()
     lservices.init()
+```
+
 实际上gate的app部分工作只是注册root services和local services的命令。
 前面我们强调过services，是非常重要的类，系统通过这个类来实现具体功能。一个模块可能有多个services。这里我们就碰到了这种情况。
 
@@ -662,19 +695,28 @@ gate模块有3个services，他们分别是：
 1、与master通讯的leafNode的services，包括2条命令：stop和reload。
 
 2、自己作为root的services，通过上面loadModule（）里面的rservices.init()注册以下几个命令。代码在：app/gate/rootservice/rservices.py (见我github的目录结构)
+
+```
 def init():
     addToRootService(forwarding)
     addToRootService(pushObject)
     addToRootService(opera_player)
     addToRootService(netconnlost)
+```
+
 3、一个挂接在    GlobalObject().localservice 的services，这个services通过lservices.init()注册3条命令，如下：
+
+```
     addToLocalService(loginToServer_101)
     addToLocalService(activeNewPlayer_102)
     addToLocalService(roleLogin_103)
+```
 
 其中 services 1 是leafnode的services，所以会被作为root的master调用。
 services  2 是自己作为root的services，所以会被gate的leafnode（net，game1，admin等）调用。
 而services  3并没有挂接到某个PB端（root，或者node），它是在services 2的forwarding（）函数中通过以下方式调用：
+
+```
 def forwarding(key,dynamicId,data):
     """
     """
@@ -682,6 +724,8 @@ def forwarding(key,dynamicId,data):
         return GlobalObject().localservice.callTarget(key,dynamicId,data)
     else:
                	 xxxxxx xxxxx xxxx #其它代码逻辑
+```
+
 所以，实际上services 3 可以看做services 2的一部分，只是实现上独立出来成为一个services而已。
 
 
@@ -707,7 +751,9 @@ OK，数据流我们就简单提一下，帮助大家理解模块功能。后面
 net顾名思义，就是网络模块，负责接受客户端的连接，处理客户端发送过来的数据，解包转发给其它模块。整个firefly系统里面，和用户打交道的也只有这个模块（admin和master虽然提供web操作接口，但是都是服务管理员的）。
 
 我们前面提到，子模块的功能是由config.json来配置驱动的。那么我们看看这个模块的json文件定义了哪些功能。
-20     "servers": {
+
+```
+ 20     "servers": {
  21         "net": {
  22             "app": "app.netserver", #具有游戏功能模块，在框架启动完毕后需要import app/netserver.py 文件
  23             "log": "app/logs/net.log", #日志
@@ -719,13 +765,14 @@ net顾名思义，就是网络模块，负责接受客户端的连接，处理�
  29                     "rootport": 10000
  30                 }
  31             ]
- 32         }                                                                                                     
+ 32         }
  33     }
-
+```
 
 那么对应的启动代码如下：（init 和 start函数省略，只列出关键部分）
 
-40     def config(self, config, dbconfig = None,memconfig = None,masterconf=None):
+```
+ 40     def config(self, config, dbconfig = None,memconfig = None,masterconf=None):
  41         """配置服务器
  42         """
  43         netport = config.get('netport')#客户端连接
@@ -747,14 +794,14 @@ net顾名思义，就是网络模块，负责接受客户端的连接，处理�
  59             self.netfactory = LiberateFactory()
  60             netservice = services.CommandService("netservice")
  61             self.netfactory.addServiceChannel(netservice)
- 62             reactor.listenTCP(netport, self.netfactory)                                                       
+ 62             reactor.listenTCP(netport, self.netfactory)
  63             GlobalObject().netfactory = self.netfactory
  64 
  65         for cnf in gatelist:
  66             rname = cnf.get('rootname')
  67             rport = cnf.get('rootport')
 
-68             self.gates[rname] = leafNode(servername)
+ 68             self.gates[rname] = leafNode(servername)
  69             addr = ('localhost', rport)
  70             self.gates[rname].connect(addr)
  71 
@@ -767,6 +814,7 @@ net顾名思义，就是网络模块，负责接受客户端的连接，处理�
  78         if app:
  79             reactor.callLater(0.1, __import__, app)
  80                                            
+```
 
 可以看出主要启动3个功能：
 1、masterconfig部分，是说明本模块作为master模块的leafnode要连接master模块，这个和gate模块一样，可以参考前面PB的介绍章节。
@@ -790,6 +838,8 @@ h空格ttp://www.amazon.com/exec/obidos/ASIN/1449326110/jpcalsjou-20
 首先，
       reactor.listenTCP(netport, self.netfactory)
 这里建立一个服务，等待客户端connect。 每次接收到一个client连接，Factory都会调用    Factory.protocol 也就是 LiberateProtocol来处理，类似fork的概念。Factory充当了一个LiberatePtotocol的管理者的角色，干活的还是LibrateProtocol。所以我们主要关心LiberatePtotocol，代码如下：
+
+```
 class LiberateProtocol(protocol.Protocol):
     """协议"""
 
@@ -852,7 +902,7 @@ class LiberateProtocol(protocol.Protocol):
         @param data: str 客户端传送过来的数据
         """
         self.datahandler.send(data)
-
+```
 
 可以看到主要处理了3个事件。
 connectionMade #客户端连接我们
@@ -869,6 +919,8 @@ dataReceived(self, data) #数据到达
 2.1、datahandler函数，每次调用到yield的地方就会暂停，等待下次被next，或者send唤醒，然后从yield的地方继续执行。
 2.2、data = yield，这条语句在被唤醒后 data就被赋值为 send传递进来的参数。
 2.3 那么这个函数改写成这样，大家就很容易理解了：
+
+```
 def dataHandleCoroutine(self，sendData):  ########改动地方
         """
         """
@@ -893,6 +945,8 @@ def dataHandleCoroutine(self，sendData):  ########改动地方
                     return    ########改动地方
                 d.addCallback(self.safeToWriteData, command)
                 d.addErrback(DefferedErrorHandle)
+```
+
 3、剩下了就简单了，利用python struct库来解包数据，            
 ud = struct.unpack('!sssss3I',dpack)
 然后调用自己的services来处理解包后的command和参数。至于如何处理命令，就要看这个services挂什么样的处理函数了。
@@ -900,9 +954,13 @@ ud = struct.unpack('!sssss3I',dpack)
 启动流程介绍完毕，下面就是app里面，暗黑游戏部分的具体处理内容了。
 
 调用流程和前面一样，我们直接到关键函数：
+
+```
 def loadModule():
     netapp.initNetApp()
     import gatenodeapp
+```
+
 这里有些代码冗余和重复，但是没有什么太大影响，我们不提了。
 这个函数的第一行代码是我改动过的（原先是import+修饰符方式），大家跟进去看，其实就是初始化一个services的子类：NetCommandService，然后给它挂上Forwarding_0 这个处理函数。
 
@@ -928,12 +986,16 @@ OK到这里结合前面的gate模块，我们应该就可以理出一条client�
 4、gate模块收到它leafNode的调用请求，所以调用自己作为root的services。而这个services在gate/app/gate/rootservice/rservices.py里面注册了forwarding函数，所以就调用它。
 5、md，fowarding函数发现这个命令号注册在loacalservices里面，见
 gate/app/gate/localservice/lservices.py中：
+
+```
 def init():
     initLocalService()
 
     addToLocalService(loginToServer_101) ############## 这里
     addToLocalService(activeNewPlayer_102)
     addToLocalService(roleLogin_103)
+```
+
 于是调用loginToServer_101来处理这个命令
 6、这个命令就不展开了，很简单，就是取数据，比对是否匹配，check是否有效。然后逐层返回，最后送给客户端
 
@@ -949,7 +1011,8 @@ net
 我自己也写了一个测试程序。已经放在github上面，tool/ clientTestLogin.py；
 用的是twisted，很简单。如下：
 
-  1 from twisted.internet.protocol import Protocol, ClientFactory                                                 
+```
+  1 from twisted.internet.protocol import Protocol, ClientFactory
   2 
   3 class Echo(Protocol):
   4     def connectionMade(self):
@@ -977,7 +1040,8 @@ net
  26 
  27 from twisted.internet import reactor
  28 reactor.connectTCP("localhost", 11009, EchoClientFactory())
-29 reactor.run()                                                                                                 
+ 29 reactor.run()
+```
 
 很简单，就30行代码，而且都是框架 。就是在连接上server后，事件connectionMade里面往server写一条命令。这条命令是我直接copy暗黑客户端的打印，就是一条封装好的数据包。
   5         a = 'N%&0\t\x00\x00\x00\x00\x00\x00\x00.\x00\x00\x00e{"password":"chenee","username":"chenee"}\n'
@@ -1000,15 +1064,19 @@ OK，这章介绍结束，下面介绍game1模块。
 game1 囊括了几乎所有游戏逻辑，内容很多。但是多也只是app内容多， 前面的firefly框架启动流程没有什么差别。
 如果看官是一直看下来的，扫一眼代码就一目了然，这里不提。直接跳到app部分。
 
+```
 def loadModule():
     """
     """
     load_config_data() #加载数据
     registe_madmin()  #注册几个表到memcache
     from gatenodeapp import *  #实际上是注册各种services的命令
+```
 
 逻辑上game/app启动逻辑分3个部分。
 Load_config_data()；里面东西虽然多，但是并不复杂，如下：
+
+```
 def getExperience_Config():
     """获取经验配置表信息"""
     global tb_Experience_config
@@ -1016,12 +1084,16 @@ def getExperience_Config():
     result = dbpool.fetchAll(sql)  ########我改过了
     for _item in result:
         tb_Experience_config[_item['level']] = _item
+```
+
 只是取一些游戏中常用的数据表的内容，然后直接保存在game1的内存数据中，不是memcache，因为这是常驻内存，而不是缓存起来的。
 
 其中    result = dbpool.fetchAll(sql) 是我改动了一下，只是把原先copy paste的代码风格整理一下。10几个地方全部是同样复制的代码看起来非常不舒服。
 不过这里不但是体力活，而且是细致活，分3中fetch，具体看我改动后的github代码，没有啥技术含量就不提了。
 
 然后是用MAdminManager，来注册管理几个表，这个和前面db章节提到的一模一样。需要注意的是，下面的代码：
+
+```
 def registe_madmin():
     """注册数据库与memcached对应
     """
@@ -1029,6 +1101,8 @@ def registe_madmin():
     MAdminManager().registe(memmode.tb_zhanyi_record_admin)
     MAdminManager().registe(memmode.tbitemadmin)
     MAdminManager().registe(memmode.tb_matrix_amin)
+```
+
 看上去做的只是注册到MAdminManager，并没有初始化。但是其实在文件开头有一个
 import memmode
 而memmode.py里面是直接裸写的全局变量。所以实际上在这个python文件开头就已经初始化了。
@@ -1042,6 +1116,7 @@ import memmode
     from gatenodeapp import *
 这个就是利用import+修饰符方式，添加一批services的命令处理函数。跟进去看：
 
+```
 remoteservice = CommandService("gateremote")
 GlobalObject().remote["gate"].setServiceChannel(remoteservice)
 
@@ -1049,6 +1124,8 @@ def remoteserviceHandle(target):
     """
     """
     remoteservice.mapTarget(target)
+```
+
 可以看出，实际上是给连接gate模块的leafNode的services添加的。这样gate转发过来的命令，都会被这些函数解析，处理。然后把结果返回给gate，再返回给net，最终到client端。
 
 
